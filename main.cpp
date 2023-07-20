@@ -12,6 +12,7 @@ void _mlir_ciface_mha_projection_v(MemRef<float, 3> *inputA, MemRef<float, 4> *o
 void _mlir_ciface_mha_projection_q(MemRef<float, 3> *inputA, MemRef<float, 4> *output);
 void _mlir_ciface_q_times_k(MemRef<float, 4> *inputA, MemRef<float, 4> *inputB, MemRef<float, 4> *output);
 void _mlir_ciface_softmax_times_v(MemRef<float, 4> *inputA, MemRef<float, 4> *inputB, MemRef<float, 4> *output);
+void _mlir_ciface_mha(MemRef<float, 3> *Q, MemRef<float, 3> *K, MemRef<float, 3> *V, MemRef<float, 3> *output);
 }
 
 static void BM_fat_gemm(benchmark::State& state) {
@@ -130,10 +131,33 @@ static void BM_softmax_times_v(benchmark::State& state) {
   }
 }
 
+static void BM_mha(benchmark::State& state) {
+  intptr_t sizesInputQKV[3] = {64,32,512};
+  MemRef<float, 3> Q(sizesInputQKV);
+  MemRef<float, 3> K(sizesInputQKV);
+  MemRef<float, 3> V(sizesInputQKV);
+  MemRef<float, 3> output(sizesInputQKV);
+
+  random_device rd;
+  mt19937 gen(rd());
+  uniform_real_distribution<> dis(0.0, 1.0);
+
+  for (int i = Q.getSize(); i >= 0; i--) {
+    Q[i] = dis(gen);
+    K[i] = dis(gen);
+    V[i] = dis(gen);
+  }
+
+  for (auto _ : state) {
+    _mlir_ciface_mha(&Q, &V, &K, &output);
+  }
+}
+
 BENCHMARK(BM_fat_gemm);
 BENCHMARK(BM_mha_projection_v);
 BENCHMARK(BM_mha_projection_q);
 BENCHMARK(BM_mha_q_times_k);
 BENCHMARK(BM_softmax_times_v);
+BENCHMARK(BM_mha);
 
 BENCHMARK_MAIN();
