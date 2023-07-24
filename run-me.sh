@@ -55,17 +55,17 @@ llc softmax_times_v.ll
 # ~68 GFLOPs
 # 62% peak
 
-tpp-opt -tile-consumer-and-fuse-producers -convert-linalg-to-tpp -bufferize \
-  -convert-linalg-to-xsmm -default-pipeline mlir/mha.mlir > mha.llvm.mlir
-mlir-translate mha.llvm.mlir -mlir-to-llvmir > mha.ll
-llc mha.ll
+tpp-opt -tile-consumer-and-fuse-producers -bufferize \
+  -convert-linalg-to-xsmm -default-pipeline mlir/mha_tensorflow.mlir > mha_tensorflow.llvm.mlir
+mlir-translate mha_tensorflow.llvm.mlir -mlir-to-llvmir > mha_tensorflow.ll
+llc mha_tensorflow.ll
 # FLOPS = projQ      + projK      + projV      + Q_t_K    + s_t_V    + Wo
 # FLOPS = 1073741824 + 1073741824 + 1073741824 + 67108864 + 67108864 + 1073741824
 # FLOPS = 3221225472 + 134217728 = 3355443200
 # ~40 GFLOPs
-# 37% peak
+# 37% peak -> 40% peak if we fold fill using beta0.
 
-clang -std=c++11 -O3 main.s fat-gemm.s projection_v.s projection_q.s q_times_k.s softmax_times_v.s mha.s \
+clang -std=c++11 -O3 main.s fat-gemm.s projection_v.s projection_q.s q_times_k.s softmax_times_v.s mha_tensorflow.s \
   -Lbenchmark/build/src -L../tpp-sandbox/build/lib -no-pie -lstdc++ -lbenchmark -ltpp_c_runner_utils -lm -o main
 
 taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=10 --benchmark_min_time=1s
