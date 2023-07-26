@@ -6,7 +6,9 @@ rm main
 
 export PATH=/home/lorenzo/llvm-project/build/bin:$PATH
 export PATH=/home/lorenzo/tpp-sandbox/build/bin:$PATH
-export LD_LIBRARY_PATH=/home/lorenzo/tpp-sandbox/build/lib
+export LD_LIBRARY_PATH=/home/lorenzo/tpp-sandbox/build/lib:/home/lorenzo/llvm-project/build/lib
+export OMP_NUM_THREADS=4
+export KMP_AFFINITY=granularity=fine,verbose,compact,1,0
 
 clang++ -std=c++11 -O3 -emit-llvm -fPIE -S -isystem benchmark/include main.cpp
 llc main.ll
@@ -15,9 +17,9 @@ llc main.ll
 tpp-opt -default-pipeline mlir/fat-gemm.mlir > fat-gemm.llvm.mlir
 mlir-translate fat-gemm.llvm.mlir -mlir-to-llvmir > fat-gemm.ll
 llc fat-gemm.ll
-# FLOPS = 32 * 32 * 32 * 2
+# FLOPS = 32 * 32 * 32 * 2 = 65536
 # ~108 GFLOPs
-# 100% peak (baseline)
+# 100% GEMM peak (baseline)
 
 #projection_v.
 tpp-opt -tile-consumer-and-fuse-producers -convert-linalg-to-tpp -bufferize \
@@ -55,17 +57,25 @@ llc softmax_times_v.ll
 # ~68 GFLOPs
 # 62% peak
 
-tpp-opt -tile-consumer-and-fuse-producers -bufferize \
-  -convert-linalg-to-xsmm -default-pipeline mlir/mha_tensorflow.mlir > mha_tensorflow.llvm.mlir
+tpp-opt -tile-consumer-and-fuse-producers -tile-consumer-and-fuse-producers -bufferize \
+  -convert-linalg-to-xsmm -loop-invariant-code-motion \
+  -default-pipeline manual-allocation.mlir > mha_tensorflow.llvm.mlir
 mlir-translate mha_tensorflow.llvm.mlir -mlir-to-llvmir > mha_tensorflow.ll
 llc mha_tensorflow.ll
 # FLOPS = projQ      + projK      + projV      + Q_t_K    + s_t_V    + Wo
 # FLOPS = 1073741824 + 1073741824 + 1073741824 + 67108864 + 67108864 + 1073741824
 # FLOPS = 3221225472 + 134217728 = 3355443200
 # ~40 GFLOPs
-# 37% peak -> 40% peak if we fold fill using beta0.
+# 37% peak 
+# Folding betas -> 40%.
+# Mapping all to TPPs -> 42%.
 
 clang -std=c++11 -O3 main.s fat-gemm.s projection_v.s projection_q.s q_times_k.s softmax_times_v.s mha_tensorflow.s \
   -Lbenchmark/build/src -L../tpp-sandbox/build/lib -no-pie -lstdc++ -lbenchmark -ltpp_c_runner_utils -lm -o main
 
-taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=10 --benchmark_min_time=1s
+# Run only mha_tensorflow.s
+#clang -std=c++11 -O3 main.s mha_tensorflow.s \
+#  -Lbenchmark/build/src -L../tpp-sandbox/build/lib -no-pie -lstdc++ -lbenchmark -ltpp_c_runner_utils -lm -o main
+
+taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=10 \
+  --benchmark_min_time=1s --benchmark_report_aggregates_only=true
