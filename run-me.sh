@@ -7,8 +7,6 @@ rm main
 export PATH=/home/lorenzo/llvm-project/build/bin:$PATH
 export PATH=/home/lorenzo/tpp-sandbox/build/bin:$PATH
 export LD_LIBRARY_PATH=/home/lorenzo/tpp-sandbox/build/lib:/home/lorenzo/llvm-project/build/lib
-export OMP_NUM_THREADS=4
-export KMP_AFFINITY=granularity=fine,verbose,compact,1,0
 
 clang++ -std=c++11 -O3 -emit-llvm -fPIE -S -isystem benchmark/include main.cpp
 llc main.ll
@@ -59,7 +57,7 @@ llc softmax_times_v.ll
 
 tpp-opt -tile-consumer-and-fuse-producers -tile-consumer-and-fuse-producers -bufferize \
   -convert-linalg-to-xsmm -loop-invariant-code-motion \
-  -default-pipeline manual-allocation.mlir > mha_tensorflow.llvm.mlir
+  -default-pipeline mlir/mha_tensorflow.mlir > mha_tensorflow.llvm.mlir
 mlir-translate mha_tensorflow.llvm.mlir -mlir-to-llvmir > mha_tensorflow.ll
 llc mha_tensorflow.ll
 # FLOPS = projQ      + projK      + projV      + Q_t_K    + s_t_V    + Wo
@@ -72,10 +70,6 @@ llc mha_tensorflow.ll
 
 clang -std=c++11 -O3 main.s fat-gemm.s projection_v.s projection_q.s q_times_k.s softmax_times_v.s mha_tensorflow.s \
   -Lbenchmark/build/src -L../tpp-sandbox/build/lib -no-pie -lstdc++ -lbenchmark -ltpp_c_runner_utils -lm -o main
-
-# Run only mha_tensorflow.s
-#clang -std=c++11 -O3 main.s mha_tensorflow.s \
-#  -Lbenchmark/build/src -L../tpp-sandbox/build/lib -no-pie -lstdc++ -lbenchmark -ltpp_c_runner_utils -lm -o main
 
 taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=10 \
   --benchmark_min_time=1s --benchmark_report_aggregates_only=true
