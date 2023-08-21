@@ -6,7 +6,9 @@
 using namespace std;
 
 extern "C" {
-void _mlir_ciface_fat_gemm(MemRef<float, 2> *inputA, MemRef<float, 2> *inputB,
+void _mlir_ciface_small_gemm(MemRef<float, 2> *inputA, MemRef<float, 2> *inputB,
+                           MemRef<float, 2> *outputC);
+void _mlir_ciface_large_gemm(MemRef<float, 2> *inputA, MemRef<float, 2> *inputB,
                            MemRef<float, 2> *outputC);
 void _mlir_ciface_mha_projection_v(MemRef<float, 3> *inputA,
                                    MemRef<float, 4> *output);
@@ -21,7 +23,7 @@ void _mlir_ciface_mha_tensorflow(MemRef<float, 3> *Q, MemRef<float, 3> *K,
                                  MemRef<float, 3> *V, MemRef<float, 3> *output);
 }
 
-static void BM_fat_gemm(benchmark::State &state) {
+static void BM_small_gemm(benchmark::State &state) {
   intptr_t sizesInput[2] = {32, 32};
   MemRef<float, 2> inputA(sizesInput);
   MemRef<float, 2> inputB(sizesInput);
@@ -46,7 +48,37 @@ static void BM_fat_gemm(benchmark::State &state) {
   }
 
   for (auto _ : state) {
-    _mlir_ciface_fat_gemm(&inputA, &inputB, &outputC);
+    _mlir_ciface_small_gemm(&inputA, &inputB, &outputC);
+  }
+}
+
+static void BM_large_gemm(benchmark::State &state) {
+  intptr_t sizesInputA[2] = {512, 1024};
+  MemRef<float, 2> inputA(sizesInputA);
+  intptr_t sizesInputB[2] = {1024, 512};
+  MemRef<float, 2> inputB(sizesInputB);
+
+  intptr_t sizesOutput[2] = {512, 512};
+  MemRef<float, 2> outputC(sizesOutput);
+
+  random_device rd;
+  mt19937 gen(rd());
+  uniform_real_distribution<> dis(0.0, 1.0);
+
+  for (int i = inputA.getSize(); i >= 0; i--) {
+    inputA[i] = dis(gen);
+  }
+
+  for (int i = inputB.getSize(); i >= 0; i--) {
+    inputB[i] = dis(gen);
+  }
+
+  for (int i = outputC.getSize(); i >= 0; i--) {
+    outputC[i] = dis(gen);
+  }
+
+  for (auto _ : state) {
+    _mlir_ciface_large_gemm(&inputA, &inputB, &outputC);
   }
 }
 
@@ -159,11 +191,14 @@ static void BM_mha_tensorflow(benchmark::State &state) {
   }
 }
 
-BENCHMARK(BM_fat_gemm);
+BENCHMARK(BM_small_gemm);
+BENCHMARK(BM_large_gemm);
+#if 0
 BENCHMARK(BM_mha_projection_v);
 BENCHMARK(BM_mha_projection_q);
 BENCHMARK(BM_mha_q_times_k);
 BENCHMARK(BM_mha_softmax_times_v);
 BENCHMARK(BM_mha_tensorflow);
+#endif 
 
 BENCHMARK_MAIN();

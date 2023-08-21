@@ -12,23 +12,25 @@ clang++ -std=c++11 -O3 \
   -emit-llvm -fno-exceptions -fno-rtti -fPIE -S -isystem benchmark/include main.cpp
 llc main.ll
 
-BENCHS=("fat_gemm" 
-        "mha_projection_v"
-        "mha_projection_q"
-        "mha_q_times_k"
-        "mha_softmax_times_v"
-        "mha_tensorflow"
+BENCHS=("small_gemm" 
+        "large_gemm"
+#        "mha_projection_v"
+#        "mha_projection_q"
+#        "mha_q_times_k"
+#        "mha_softmax_times_v"
+#        "mha_tensorflow"
        )
 
 FLOPS=( 65536.000
-        1073741824.000
-        1073741824.000
-        67108864.000
-        67108864.000
-        3355443200.000
+        268435456.000
+#        1073741824.000
+#        1073741824.000
+#        67108864.000
+#        67108864.000
+#        3355443200.000
       )
 
-TPP_FLAGS="-tile-consumer-and-fuse-producers -convert-linalg-to-tpp -bufferize \
+TPP_FLAGS="-tpp-mapping -bufferize \
   -convert-linalg-to-xsmm -default-pipeline"
 
 for BENCH in ${BENCHS[@]}; do
@@ -40,10 +42,13 @@ done
 #Append .s to BENCHS
 BENCHS_ASSEMBLY=("${BENCHS[@]/%/.s}")
 
-# fat_gemm.
+# small_gemm.
 # FLOPS = 32 * 32 * 32 * 2 = 65536
 # ~108 GFLOPs
 # 100% GEMM peak (baseline)
+
+# large gemm.
+# FLOPS = 512 * 512 * 1024 = 268435456
 
 # mha_projection_v.
 # FLOPS = 64 * 32 * 8 * 64 * 512 (red) * 2 = 1073741824
