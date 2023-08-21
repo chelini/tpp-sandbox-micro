@@ -113,7 +113,7 @@ static void BM_mha_q_times_k(benchmark::State &state) {
   }
 }
 
-static void BM_softmax_times_v(benchmark::State &state) {
+static void BM_mha_softmax_times_v(benchmark::State &state) {
   intptr_t sizesInputA[4] = {64, 8, 32, 32};
   MemRef<float, 4> inputA(sizesInputA);
   intptr_t sizesInputB[4] = {64, 32, 8, 64};
@@ -163,7 +163,7 @@ BENCHMARK(BM_fat_gemm);
 BENCHMARK(BM_mha_projection_v);
 BENCHMARK(BM_mha_projection_q);
 BENCHMARK(BM_mha_q_times_k);
-BENCHMARK(BM_softmax_times_v);
+BENCHMARK(BM_mha_softmax_times_v);
 BENCHMARK(BM_mha_tensorflow);
 
 BENCHMARK_MAIN();

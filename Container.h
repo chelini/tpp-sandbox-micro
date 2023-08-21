@@ -26,7 +26,6 @@
 #include <cstdint>
 #include <memory>
 #include <numeric>
-#include <stdexcept>
 #include <vector>
 
 // MemRef descriptor.
@@ -112,7 +111,7 @@ MemRef<T, N>::MemRef(intptr_t sizes[N], T init) {
 template <typename T, std::size_t N>
 MemRef<T, N>::MemRef(std::vector<size_t> sizes, T init) {
   if (sizes.size() != N) {
-    throw std::runtime_error("Invalid number of dimensions.");
+    assert(false && "Invalid number of dimensions.");
   }
   for (size_t i = 0; i < N; i++) {
     this->sizes[i] = sizes[i];

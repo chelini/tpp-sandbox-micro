@@ -8,68 +8,84 @@ export PATH=/home/lorenzo/llvm-project/build/bin:$PATH
 export PATH=/home/lorenzo/tpp-sandbox/build/bin:$PATH
 export LD_LIBRARY_PATH=/home/lorenzo/tpp-sandbox/build/lib:/home/lorenzo/llvm-project/build/lib
 
-clang++ -std=c++11 -O3 -emit-llvm -fPIE -S -isystem benchmark/include main.cpp
+clang++ -std=c++11 -O3 \
+  -emit-llvm -fno-exceptions -fno-rtti -fPIE -S -isystem benchmark/include main.cpp
 llc main.ll
 
-#fat matmul.
-tpp-opt -default-pipeline mlir/fat-gemm.mlir > fat-gemm.llvm.mlir
-mlir-translate fat-gemm.llvm.mlir -mlir-to-llvmir > fat-gemm.ll
-llc fat-gemm.ll
+BENCHS=("fat_gemm" 
+        "mha_projection_v"
+        "mha_projection_q"
+        "mha_q_times_k"
+        "mha_softmax_times_v"
+        "mha_tensorflow"
+       )
+
+FLOPS=( 65536.000
+        1073741824.000
+        1073741824.000
+        67108864.000
+        67108864.000
+        3355443200.000
+      )
+
+TPP_FLAGS="-tile-consumer-and-fuse-producers -convert-linalg-to-tpp -bufferize \
+  -convert-linalg-to-xsmm -default-pipeline"
+
+for BENCH in ${BENCHS[@]}; do
+  tpp-opt ${TPP_FLAGS} mlir/${BENCH}.mlir > ${BENCH}.llvm.mlir
+  mlir-translate ${BENCH}.llvm.mlir -mlir-to-llvmir > ${BENCH}.ll
+  llc ${BENCH}.ll
+done
+
+#Append .s to BENCHS
+BENCHS_ASSEMBLY=("${BENCHS[@]/%/.s}")
+
+# fat_gemm.
 # FLOPS = 32 * 32 * 32 * 2 = 65536
 # ~108 GFLOPs
 # 100% GEMM peak (baseline)
 
-#projection_v.
-tpp-opt -tile-consumer-and-fuse-producers -convert-linalg-to-tpp -bufferize \
-  -convert-linalg-to-xsmm -default-pipeline mlir/projection_v.mlir > projection_v.llvm.mlir
-mlir-translate projection_v.llvm.mlir -mlir-to-llvmir > projection_v.ll
-llc projection_v.ll
+# mha_projection_v.
 # FLOPS = 64 * 32 * 8 * 64 * 512 (red) * 2 = 1073741824
 # ~52 GFLOPs
 # 48% peak
 
-#projection q.
-tpp-opt -tile-consumer-and-fuse-producers -convert-linalg-to-tpp -bufferize \
-  -convert-linalg-to-xsmm -default-pipeline mlir/projection_q.mlir > projection_q.llvm.mlir
-mlir-translate projection_q.llvm.mlir -mlir-to-llvmir > projection_q.ll
-llc projection_q.ll
+# mha_projection_q.
 # FLOPS = 64 * 32 * 8 * 64 * 512 (red) * 2 = 1073741824
 # ~53 GFLOPs
 # 49% peak
 
-# q times k.
-tpp-opt -tile-consumer-and-fuse-producers -convert-linalg-to-tpp -bufferize \
-  -convert-linalg-to-xsmm -default-pipeline mlir/q_times_k.mlir > q_times_k.llvm.mlir
-mlir-translate q_times_k.llvm.mlir -mlir-to-llvmir > q_times_k.ll
-llc q_times_k.ll
+# mha_q_times_k.
 # FLOPS = 64 * 32 * 8 * 64 * 32 (red) * 2 = 67108864
 # ~59 GFLOPs
 # 54% peak
 
-# softmax times v
-tpp-opt -tile-consumer-and-fuse-producers -convert-linalg-to-tpp -bufferize \
-  -convert-linalg-to-xsmm -default-pipeline mlir/softmax_times_v.mlir > softmax_times_v.llvm.mlir
-mlir-translate softmax_times_v.llvm.mlir -mlir-to-llvmir > softmax_times_v.ll
-llc softmax_times_v.ll
+# mha_softmax_times_v.
 # FLOPS = 64 * 32 * 8 * 64 * 32 (red) * 2 = 67108864
 # ~68 GFLOPs
 # 62% peak
 
-tpp-opt -tile-consumer-and-fuse-producers -tile-consumer-and-fuse-producers -bufferize \
-  -convert-linalg-to-xsmm -loop-invariant-code-motion \
-  -default-pipeline mlir/mha_tensorflow.mlir > mha_tensorflow.llvm.mlir
-mlir-translate mha_tensorflow.llvm.mlir -mlir-to-llvmir > mha_tensorflow.ll
-llc mha_tensorflow.ll
+# mha_tensorflow.
 # FLOPS = projQ      + projK      + projV      + Q_t_K    + s_t_V    + Wo
 # FLOPS = 1073741824 + 1073741824 + 1073741824 + 67108864 + 67108864 + 1073741824
 # FLOPS = 3221225472 + 134217728 = 3355443200
 # ~40 GFLOPs
 # 37% peak 
-# Folding betas -> 40%.
-# Mapping all to TPPs -> 42%.
 
-clang -std=c++11 -O3 main.s fat-gemm.s projection_v.s projection_q.s q_times_k.s softmax_times_v.s mha_tensorflow.s \
+clang -std=c++11 -O3 main.s ${BENCHS_ASSEMBLY[@]} \
   -Lbenchmark/build/src -L../tpp-sandbox/build/lib -no-pie -lstdc++ -lbenchmark -ltpp_c_runner_utils -lm -o main
 
 taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=10 \
-  --benchmark_min_time=1s --benchmark_report_aggregates_only=true
+  --benchmark_min_time=1s --benchmark_report_aggregates_only=true --benchmark_format=json > dump.json
+
+BENCHS_BENCH=("${BENCHS[@]/#/BM_}")
+BENCHS_BENCH=("${BENCHS_BENCH[@]/%/_mean}")
+
+for i in ${!BENCHS_BENCH[@]}; do
+  TIME=$( jq '.benchmarks[] | select(.name=='"\"${BENCHS_BENCH[$i]}\""') .cpu_time' dump.json )
+  awk "BEGIN {
+    flops=${FLOPS[$i]}; time=${TIME}
+    gflops=flops/time
+    printf \"glops for ${BENCHS_BENCH[$i]} : %.3f\n\", gflops
+  }" 
+done
