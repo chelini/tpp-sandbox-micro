@@ -1,28 +1,42 @@
-message(STATUS "TPP Micro CMakeLists.txt BEGIN")
-
-cmake_minimum_required(VERSION 3.13.4)
-
-# CMP0116: Ninja generators transform `DEPFILE`s from `add_custom_command()`
-# New in CMake 3.20. https://cmake.org/cmake/help/latest/policy/CMP0116.html
-if(POLICY CMP0116)
-  cmake_policy(SET CMP0116 OLD)
-endif()
-
-project(tpp-dialect LANGUAGES CXX C)
+cmake_minimum_required(VERSION 3.20.0)
+project(SimpleProject)
 
 set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
 
+add_compile_options(-fno-rtti -fno-exceptions -fno-omit-frame-pointer)
+
+find_package(LLVM REQUIRED CONFIG)
 find_package(MLIR REQUIRED CONFIG)
-set(LLVM_RUNTIME_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/bin)
-set(LLVM_LIBRARY_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/lib)
-set(MLIR_BINARY_DIR ${CMAKE_BINARY_DIR})
-message(STATUS "Enabling tpp tooling")
-message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
+
+message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
-list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
-list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 
-list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/modules")
+# Set your project compile flags.
+# E.g. if using the C++ header files
+# you will need to enable C++11 support
+# for your compiler.
 
+include_directories(${LLVM_INCLUDE_DIRS})
+include_directories(${MLIR_INCLUDE_DIRS})
+separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
+add_definitions(${LLVM_DEFINITIONS_LIST})
 
-message(STATUS "TPP Project CMakeLists.txt END")
+# Find the libraries that correspond to the LLVM components
+# that we wish to use
+llvm_map_components_to_libnames(llvm_libs support core)
+
+# Link against LLVM libraries
+target_link_libraries(simple-tool PRIVATE ${llvm_libs})
+# Link against MLIR libraries
+target_link_libraries(simple-tool PRIVATE
+  MLIRIR
+  MLIRSupport
+  )
+
+option(BENCHMARK_DOWNLOAD_DEPENDENCIES 
+  "Allow the downloading and in-tree building of unmet dependencies" ON)
+
+add_subdirectory(benchmark)
+target_link_libraries(simple-tool PRIVATE benchmark::benchmark)
+
+add_executable(simple-tool tool.cpp)

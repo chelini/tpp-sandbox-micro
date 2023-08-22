@@ -14,6 +14,7 @@ llc main.ll
 
 BENCHS=("small_gemm" 
         "large_gemm"
+        "mlp_single_layer"
 #        "mha_projection_v"
 #        "mha_projection_q"
 #        "mha_q_times_k"
@@ -23,6 +24,7 @@ BENCHS=("small_gemm"
 
 FLOPS=( 65536.000
         268435456.000
+        134479872.000
 #        1073741824.000
 #        1073741824.000
 #        67108864.000
@@ -49,6 +51,9 @@ BENCHS_ASSEMBLY=("${BENCHS[@]/%/.s}")
 
 # large gemm.
 # FLOPS = 512 * 512 * 1024 = 268435456
+
+# mlp_single_layer.
+# FLOPS = (256 * 512 * 512 * 2) + (256 * 512 * 2) = 134479872
 
 # mha_projection_v.
 # FLOPS = 64 * 32 * 8 * 64 * 512 (red) * 2 = 1073741824
