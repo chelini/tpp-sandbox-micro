@@ -22,6 +22,58 @@ void _mlir_ciface_softmax_times_v(MemRef<float, 4> *inputA,
 void _mlir_ciface_mha_tensorflow(MemRef<float, 3> *Q, MemRef<float, 3> *K,
                                  MemRef<float, 3> *V, MemRef<float, 3> *output);
 void _mlir_ciface_mlp_single_layer(MemRef<float, 2> *In, MemRef<float, 2> *Out);
+void _mlir_ciface_pack_gemm_operand_a(MemRef<float, 2> *In,
+                                      MemRef<float, 4> *Out);
+void _mlir_ciface_pack_gemm_operand_b(MemRef<float, 2> *In,
+                                      MemRef<float, 4> *Out);
+}
+
+static void BM_pack_gemm_operand_a(benchmark::State &state) {
+  intptr_t sizesIn[2] = {512, 1024};
+  MemRef<float, 2> in(sizesIn);
+
+  intptr_t sizesOut[4] = {16, 32, 32, 32};
+  MemRef<float, 4> out(sizesOut);
+
+  random_device rd;
+  mt19937 gen(rd());
+  uniform_real_distribution<> dis(0.0, 1.0);
+
+  for (int i = in.getSize(); i >= 0; i--) {
+    in[i] = dis(gen);
+  }
+
+  for (int i = out.getSize(); i >= 0; i--) {
+    out[i] = 0.0;
+  }
+
+  for (auto _ : state) {
+    _mlir_ciface_pack_gemm_operand_a(&in, &out);
+  }
+}
+
+static void BM_pack_gemm_operand_b(benchmark::State &state) {
+  intptr_t sizesIn[2] = {1024, 512};
+  MemRef<float, 2> in(sizesIn);
+
+  intptr_t sizesOut[4] = {16, 32, 32, 32};
+  MemRef<float, 4> out(sizesOut);
+
+  random_device rd;
+  mt19937 gen(rd());
+  uniform_real_distribution<> dis(0.0, 1.0);
+
+  for (int i = in.getSize(); i >= 0; i--) {
+    in[i] = dis(gen);
+  }
+
+  for (int i = out.getSize(); i >= 0; i--) {
+    out[i] = 0.0;
+  }
+
+  for (auto _ : state) {
+    _mlir_ciface_pack_gemm_operand_b(&in, &out);
+  }
 }
 
 static void BM_mlp_single_layer(benchmark::State &state) {
@@ -215,9 +267,11 @@ static void BM_mha_tensorflow(benchmark::State &state) {
 }
 
 BENCHMARK(BM_small_gemm);
-BENCHMARK(BM_large_gemm);
 BENCHMARK(BM_mlp_single_layer);
+BENCHMARK(BM_pack_gemm_operand_a);
+BENCHMARK(BM_pack_gemm_operand_b);
 #if 0
+BENCHMARK(BM_large_gemm);
 BENCHMARK(BM_mha_projection_v);
 BENCHMARK(BM_mha_projection_q);
 BENCHMARK(BM_mha_q_times_k);

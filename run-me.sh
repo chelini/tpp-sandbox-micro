@@ -13,8 +13,10 @@ clang++ -std=c++11 -O3 \
 llc main.ll
 
 BENCHS=("small_gemm" 
-        "large_gemm"
+        #"large_gemm"
         "mlp_single_layer"
+        "pack_gemm_operand_a"
+        "pack_gemm_operand_b"
 #        "mha_projection_v"
 #        "mha_projection_q"
 #        "mha_q_times_k"
@@ -23,8 +25,10 @@ BENCHS=("small_gemm"
        )
 
 FLOPS=( 65536.000
-        268435456.000
+        #268435456.000
         134479872.000
+        2097152.000
+        2097152.000
 #        1073741824.000
 #        1073741824.000
 #        67108864.000
@@ -85,7 +89,7 @@ BENCHS_ASSEMBLY=("${BENCHS[@]/%/.s}")
 clang -std=c++11 -O3 main.s ${BENCHS_ASSEMBLY[@]} \
   -Lbenchmark/build/src -L../tpp-sandbox/build/lib -no-pie -lstdc++ -lbenchmark -ltpp_c_runner_utils -lm -o main
 
-taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=10 \
+taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=20 \
   --benchmark_min_time=1s --benchmark_report_aggregates_only=true --benchmark_format=json > dump.json
 
 BENCHS_BENCH=("${BENCHS[@]/#/BM_}")
