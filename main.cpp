@@ -270,13 +270,11 @@ BENCHMARK(BM_small_gemm);
 BENCHMARK(BM_mlp_single_layer);
 BENCHMARK(BM_pack_gemm_operand_a);
 BENCHMARK(BM_pack_gemm_operand_b);
-#if 0
 BENCHMARK(BM_large_gemm);
 BENCHMARK(BM_mha_projection_v);
 BENCHMARK(BM_mha_projection_q);
 BENCHMARK(BM_mha_q_times_k);
 BENCHMARK(BM_mha_softmax_times_v);
 BENCHMARK(BM_mha_tensorflow);
-#endif
 
 BENCHMARK_MAIN();

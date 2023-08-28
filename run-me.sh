@@ -13,27 +13,27 @@ clang++ -std=c++11 -O3 \
 llc main.ll
 
 BENCHS=("small_gemm" 
-        #"large_gemm"
+        "large_gemm"
         "mlp_single_layer"
         "pack_gemm_operand_a"
         "pack_gemm_operand_b"
-#        "mha_projection_v"
-#        "mha_projection_q"
-#        "mha_q_times_k"
-#        "mha_softmax_times_v"
-#        "mha_tensorflow"
+        "mha_projection_v"
+        "mha_projection_q"
+        "mha_q_times_k"
+        "mha_softmax_times_v"
+        "mha_tensorflow"
        )
 
 FLOPS=( 65536.000
-        #268435456.000
+        268435456.000
         134479872.000
         2097152.000
         2097152.000
-#        1073741824.000
-#        1073741824.000
-#        67108864.000
-#        67108864.000
-#        3355443200.000
+        1073741824.000
+        1073741824.000
+        67108864.000
+        67108864.000
+        3355443200.000
       )
 
 TPP_FLAGS="-tpp-mapping -bufferize \
@@ -97,9 +97,14 @@ BENCHS_BENCH=("${BENCHS_BENCH[@]/%/_mean}")
 
 for i in ${!BENCHS_BENCH[@]}; do
   TIME=$( jq '.benchmarks[] | select(.name=='"\"${BENCHS_BENCH[$i]}\""') .cpu_time' dump.json )
-  awk "BEGIN {
-    flops=${FLOPS[$i]}; time=${TIME}
-    gflops=flops/time
-    printf \"glops for ${BENCHS_BENCH[$i]} : %.3f\n\", gflops
-  }" 
+  if [ -z "$TIME" ]
+  then
+    echo "no time for ${BENCHS_BENCH[$i]}, skipping it"
+  else 
+    awk "BEGIN {
+      flops=${FLOPS[$i]}; time=${TIME}
+      gflops=flops/time
+      printf \"glops for ${BENCHS_BENCH[$i]} : %.3f\n\", gflops
+    }"
+  fi  
 done
