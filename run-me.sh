@@ -9,7 +9,7 @@ export PATH=/home/lorenzo/tpp-sandbox/build/bin:$PATH
 export LD_LIBRARY_PATH=/home/lorenzo/tpp-sandbox/build/lib:/home/lorenzo/llvm-project/build/lib
 
 clang++ -std=c++11 -O3 \
-  -emit-llvm -fno-exceptions -fno-rtti -fPIE -S -isystem benchmark/include main.cpp
+  -emit-llvm -fno-exceptions -fno-rtti -fno-omit-frame-pointer -fPIE -S -isystem benchmark/include main.cpp
 llc main.ll
 
 BENCHS=("small_gemm" 
@@ -52,7 +52,7 @@ FLOPS=( 65536.000
         9126805504.000
       )
 
-TPP_FLAGS="-tpp-mapping -bufferize \
+TPP_FLAGS="-def-pack-matmul=false -tpp-mapping -bufferize \
   -convert-linalg-to-xsmm -fold-xsmm-flags -default-pipeline"
 
 for BENCH in ${BENCHS[@]}; do

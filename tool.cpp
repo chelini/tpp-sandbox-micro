@@ -74,5 +74,5 @@ static void BM_func(benchmark::State &state) {
   }
 }
 
-BENCHMARK(BM_func)->Arg(32)->Arg(64)->Setup(DoSetup)->Teardown(DoTeardown);
+BENCHMARK(BM_func)->Arg(2048)->Arg(2048)->Setup(DoSetup)->Teardown(DoTeardown);
 BENCHMARK_MAIN();
