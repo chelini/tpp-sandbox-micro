@@ -9,15 +9,15 @@
 using namespace std;
 
 extern "C" {
-void _mlir_ciface_fat_gemm(MemRef<float, 2> *inputA, MemRef<float, 2> *inputB,
-                           MemRef<float, 2> *outputC);
+void _mlir_ciface_small_gemm(MemRef<float, 2> *inputA, MemRef<float, 2> *inputB,
+                             MemRef<float, 2> *outputC);
 }
 
 static void DoSetup(const benchmark::State &state) {
   static const char structuredOpOdsHeaderFormat[] = R"FMT(
 
-func.func @fat_gemm(%arg0: tensor<{0}x{0}xf32>, %arg1: tensor<{0}x{0}xf32>, 
-                   %arg2: tensor<{0}x{0}xf32>) -> tensor<{0}x{0}xf32> attributes {{llvm.emit_c_interface}} {{
+func.func @small_gemm(%arg0: tensor<{0}x{0}xf32>, %arg1: tensor<{0}x{0}xf32>, 
+                      %arg2: tensor<{0}x{0}xf32>) -> tensor<{0}x{0}xf32> attributes {{llvm.emit_c_interface}} {{
   %0 = linalg.matmul ins(%arg0, %arg1: tensor<{0}x{0}xf32>, tensor<{0}x{0}xf32>)
                      outs(%arg2: tensor<{0}x{0}xf32>) -> tensor<{0}x{0}xf32>
   return %0 : tensor<{0}x{0}xf32>
@@ -70,7 +70,7 @@ static void BM_func(benchmark::State &state) {
   }
 
   for (auto _ : state) {
-    _mlir_ciface_fat_gemm(&inputA, &inputB, &outputC);
+    _mlir_ciface_small_gemm(&inputA, &inputB, &outputC);
   }
 }
 
