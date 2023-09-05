@@ -13,6 +13,7 @@ clang++ -std=c++11 -O3 \
 llc main.ll
 
 BENCHS=("small_gemm" 
+        "mid_gemm"
         "large_gemm"
         "large_gemm_with_fill"
         "large_gemm_pre_packed"
@@ -32,6 +33,7 @@ BENCHS=("small_gemm"
        )
 
 FLOPS=( 65536.000
+        524288.000
         536870912.000
         536870912.000
         536870912.000
@@ -51,7 +53,7 @@ FLOPS=( 65536.000
       )
 
 TPP_FLAGS="-tpp-mapping -bufferize \
-  -convert-linalg-to-xsmm -default-pipeline"
+  -convert-linalg-to-xsmm -fold-xsmm-flags -default-pipeline"
 
 for BENCH in ${BENCHS[@]}; do
   tpp-opt ${TPP_FLAGS} mlir/${BENCH}.mlir > ${BENCH}.llvm.mlir
@@ -66,6 +68,9 @@ BENCHS_ASSEMBLY=("${BENCHS[@]/%/.s}")
 # FLOPS = 32 * 32 * 32 * 2 = 65536
 # ~108 GFLOPs
 # 100% GEMM peak (baseline)
+
+# mid_gemm.
+# FLOPS = 64 * 64 * 64 * 2 = 524288
 
 # large gemm and large_gemm_pre_packed.
 # FLOPS = 512 * 512 * 1024 * 2 = 536870912
@@ -115,7 +120,7 @@ BENCHS_ASSEMBLY=("${BENCHS[@]/%/.s}")
 clang -std=c++11 -O3 main.s ${BENCHS_ASSEMBLY[@]} \
   -Lbenchmark/build/src -L../tpp-sandbox/build/lib -no-pie -lstdc++ -lbenchmark -ltpp_c_runner_utils -lm -o main
 
-taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=50 \
+taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=15 \
   --benchmark_min_time=1s --benchmark_report_aggregates_only=true --benchmark_format=json > dump.json
 
 BENCHS_BENCH=("${BENCHS[@]/#/BM_}")

@@ -479,9 +479,11 @@ BENCHMARK(BM_mha_q_times_k);
 BENCHMARK(BM_mha_q_times_k_transposed);
 BENCHMARK(BM_mha_q_times_k_with_transpose);
 #endif
+BENCHMARK(BM_small_gemm);
+BENCHMARK(BM_large_gemm);
 BENCHMARK(BM_mha_tensorflow);
 BENCHMARK(BM_mha_tensorflow_bytedance);
 BENCHMARK(BM_mha_tensorflow_seq_len_1024);
-BENCHMARK(BM_mha_tensorflow_seq_len_256);
+// BENCHMARK(BM_mha_tensorflow_seq_len_256);
 
 BENCHMARK_MAIN();
