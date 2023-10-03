@@ -1,68 +1,8 @@
 #!/bin/bash
 
-rm *.s
-rm *.ll
-rm main
-
-export PATH=/home/lorenzo/llvm-project/build/bin:$PATH
-export PATH=/home/lorenzo/tpp-sandbox/build/bin:$PATH
-export LD_LIBRARY_PATH=/home/lorenzo/tpp-sandbox/build/lib:/home/lorenzo/llvm-project/build/lib
-
-clang++ -std=c++11 -O3 \
-  -emit-llvm -fno-exceptions -fno-rtti -fno-omit-frame-pointer -fPIE -S -isystem benchmark/include main.cpp
-llc main.ll
-
-BENCHS=("small_gemm" 
-        "mid_gemm"
-        "large_gemm"
-        "large_gemm_with_fill"
-        "large_gemm_pre_packed"
-        "mlp_single_layer"
-        "pack_gemm_operand_a"
-        "pack_gemm_operand_b"
-        "mha_projection_v"
-        "mha_projection_q"
-        "mha_q_times_k"
-        "mha_q_times_k_transposed"
-        "mha_q_times_k_with_transpose"
-        "mha_softmax_times_v"
-        "mha_tensorflow"
-        "mha_tensorflow_bytedance"
-        "mha_tensorflow_seq_len_1024"
-        "mha_tensorflow_seq_len_256"
-       )
-
-FLOPS=( 65536.000
-        524288.000
-        536870912.000
-        536870912.000
-        536870912.000
-        134479872.000
-        2097152.000
-        2097152.000
-        1073741824.000
-        1073741824.000
-        67108864.000
-        67108864.000
-        67108864.000
-        67108864.000
-        3355443200.000
-        3355443200.000
-        141733920768.000
-        9126805504.000
-      )
-
-TPP_FLAGS="-def-pack-matmul=false -tpp-mapping -bufferize \
-  -convert-linalg-to-xsmm -fold-xsmm-flags -default-pipeline"
-
-for BENCH in ${BENCHS[@]}; do
-  tpp-opt ${TPP_FLAGS} mlir/${BENCH}.mlir > ${BENCH}.llvm.mlir
-  mlir-translate ${BENCH}.llvm.mlir -mlir-to-llvmir > ${BENCH}.ll
-  llc ${BENCH}.ll
-done
-
-#Append .s to BENCHS
-BENCHS_ASSEMBLY=("${BENCHS[@]/%/.s}")
+# My machine:
+# Comet lake -> Skylake
+# 2.6 * 2 FMAs * 2 ops(mul + add) * AVX2 (256/32) = 83.2 GFLOP/s.
 
 # small_gemm.
 # FLOPS = 32 * 32 * 32 * 2 = 65536
@@ -117,25 +57,100 @@ BENCHS_ASSEMBLY=("${BENCHS[@]/%/.s}")
 # Q_t_K = 64 * 256 * 8 * 64 * 32 (red) * 2 = 536870912
 # FLOPS = 34359738368 * 4 + 2147483648 * 2 = 9126805504
 
+rm *.s
+rm *.ll
+rm main
+rm dump.json
+
+export PATH=/home/lorenzo/llvm-project/build/bin:$PATH
+export PATH=/home/lorenzo/tpp-sandbox/build/bin:$PATH
+export LD_LIBRARY_PATH=/home/lorenzo/tpp-sandbox/build/lib:/home/lorenzo/llvm-project/build/lib
+
+clang++ -std=c++11 -O3 \
+  -emit-llvm -fno-exceptions -fno-rtti -fno-omit-frame-pointer -fPIE -S -isystem benchmark/include main.cpp
+llc main.ll
+
+BENCHS=(
+        #"gemm_32x32x32"
+        #"gemm_32x32x64"
+        #"gemm_64x64x64"
+        #"gemm_128x128x128"
+        #"gemm_1024x1024x1024"
+        #"mlp_single_layer"
+        "pack_gemm_operand_a"
+        "unpack_gemm_operand"
+        #"pack_gemm_operand_b"
+        #"mha_projection_v"
+        #"mha_projection_q"
+        #"mha_q_times_k"
+        #"mha_q_times_k_transposed"
+        #"mha_q_times_k_with_transpose"
+        #"mha_softmax_times_v"
+        #"mha_tensorflow"
+        #"mha_tensorflow_bytedance"
+        #"mha_tensorflow_seq_len_1024"
+        #"mha_tensorflow_seq_len_256"
+       )
+
+# Do not use this.
+FLOPS=(
+        65536.000
+        131072.000
+        524288.000
+        4194304.000
+        2147483648.000
+        134479872.000
+        2097152.000
+        2097152.000
+        1073741824.000
+        1073741824.000
+        67108864.000
+        67108864.000
+        67108864.000
+        67108864.000
+        3355443200.000
+        3355443200.000
+        141733920768.000
+        9126805504.000
+      )
+
+TPP_FLAGS=(
+  "-tpp-mapping -bufferize -convert-memref-to-xsmm -default-pipeline"
+  ) 
+ 
+for BENCH in ${BENCHS[@]}; do
+    tpp-opt ${TPP_FLAGS} mlir/${BENCH}.mlir > ${BENCH}.llvm.mlir
+    mlir-translate ${BENCH}.llvm.mlir -mlir-to-llvmir > ${BENCH}.ll
+    llc ${BENCH}.ll
+  done
+
+#Append .s to BENCHS
+BENCHS_ASSEMBLY=("${BENCHS[@]/%/.s}")
+
 clang -std=c++11 -O3 main.s ${BENCHS_ASSEMBLY[@]} \
-  -Lbenchmark/build/src -L../tpp-sandbox/build/lib -no-pie -lstdc++ -lbenchmark -ltpp_c_runner_utils -lm -o main
+  -Lbenchmark/build/src -L../tpp-sandbox/build/lib -no-pie -lstdc++ -lbenchmark -ltpp_xsmm_runner_utils -lm -o main
 
-taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=15 \
-  --benchmark_min_time=1s --benchmark_report_aggregates_only=true --benchmark_format=json > dump.json
+#taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=15 \
+#  --benchmark_min_time=1s --benchmark_report_aggregates_only=true --benchmark_format=json > dump.json
 
-BENCHS_BENCH=("${BENCHS[@]/#/BM_}")
-BENCHS_BENCH=("${BENCHS_BENCH[@]/%/_median}")
+taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=50 \
+  --benchmark_min_time=1s --benchmark_report_aggregates_only=true 
 
-for i in ${!BENCHS_BENCH[@]}; do
-  TIME=$( jq '.benchmarks[] | select(.name=='"\"${BENCHS_BENCH[$i]}\""') .cpu_time' dump.json )
-  if [ -z "$TIME" ]
-  then
-    echo "no time for ${BENCHS_BENCH[$i]}, skipping it"
-  else 
-    awk "BEGIN {
-      flops=${FLOPS[$i]}; time=${TIME}
-      gflops=flops/time
-      printf \"gflops for ${BENCHS_BENCH[$i]} : %.3f\n\", gflops
-    }"
-  fi  
-done
+#BENCHS_BENCH=("${BENCHS[@]/#/BM_}")
+#BENCHS_BENCH=("${BENCHS_BENCH[@]/%/_median}")
+
+#for i in ${!BENCHS_BENCH[@]}; do
+#  TIME=$( jq '.benchmarks[] | select(.name=='"\"${BENCHS_BENCH[$i]}\""') .cpu_time' dump.json )
+#  if [ -z "$TIME" ]
+#  then
+#    echo "no time for ${BENCHS_BENCH[$i]}, skipping it"
+#  else 
+#    echo ${FLOPS[$i]}
+#    echo ${TIME}
+#    awk "BEGIN {
+#        flops=${FLOPS[$i]}; time=${TIME}
+#        gflops=flops/time
+#        printf \"gflops for ${BENCHS_BENCH[$i]} : %.3f\n\", gflops
+#    }"
+#  fi  
+#done

@@ -29,7 +29,7 @@ func.func @mlp_single_layer(%arg0: tensor<256x512xf32>, %output: tensor<256x512x
     iterator_types = ["parallel", "parallel"]} 
     ins(%10 : tensor<256x512xf32>) outs(%ee : tensor<256x512xf32>) {
     ^bb0(%in: f32, %out: f32):
-      %max = arith.maxf %in, %cst : f32
+      %max = arith.maximumf %in, %cst : f32
       linalg.yield %max : f32
   } -> tensor<256x512xf32>
 

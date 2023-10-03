@@ -1,22 +1,14 @@
 #include "Container.h"
-#include "llvm/Support/FormatVariadic.h"
-#include "llvm/Support/ToolOutputFile.h"
 #include <benchmark/benchmark.h>
 #include <iostream>
 #include <random>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 using namespace std;
 
 extern "C" {
-void _mlir_ciface_small_gemm(MemRef<float, 2> *inputA, MemRef<float, 2> *inputB,
-                             MemRef<float, 2> *outputC);
-void _mlir_ciface_mid_gemm(MemRef<float, 2> *inputA, MemRef<float, 2> *inputB,
-                           MemRef<float, 2> *outputC);
-void _mlir_ciface_large_gemm(MemRef<float, 2> *inputA, MemRef<float, 2> *inputB,
-                             MemRef<float, 2> *outputC);
-void _mlir_ciface_large_gemm_with_fill(MemRef<float, 2> *inputA,
-                                       MemRef<float, 2> *inputB,
-                                       MemRef<float, 2> *outputC);
 void _mlir_ciface_mha_projection_v(MemRef<float, 3> *inputA,
                                    MemRef<float, 4> *output);
 void _mlir_ciface_mha_projection_q(MemRef<float, 3> *inputA,
@@ -51,9 +43,17 @@ void _mlir_ciface_pack_gemm_operand_a(MemRef<float, 2> *In,
                                       MemRef<float, 4> *Out);
 void _mlir_ciface_pack_gemm_operand_b(MemRef<float, 2> *In,
                                       MemRef<float, 4> *Out);
-void _mlir_ciface_large_gemm_pre_packed(MemRef<float, 4> *inputA,
-                                        MemRef<float, 4> *inputB,
-                                        MemRef<float, 4> *outputC);
+void _mlir_ciface_gemm_32x32x32(MemRef<float, 2> *A, MemRef<float, 2> *B,
+                                MemRef<float, 2> *C);
+void _mlir_ciface_gemm_32x32x64(MemRef<float, 2> *A, MemRef<float, 2> *B,
+                                MemRef<float, 2> *C);
+void _mlir_ciface_gemm_64x64x64(MemRef<float, 2> *A, MemRef<float, 2> *B,
+                                MemRef<float, 2> *C);
+void _mlir_ciface_gemm_128x128x128(MemRef<float, 2> *A, MemRef<float, 2> *B,
+                                   MemRef<float, 2> *C);
+void _mlir_ciface_gemm_1024x1024x1024(MemRef<float, 2> *A, MemRef<float, 2> *B,
+                                      MemRef<float, 2> *C);
+void _mlir_ciface_unpack_gemm_operand(MemRef<float, 4> *A, MemRef<float, 2> *B);
 }
 
 static void BM_pack_gemm_operand_a(benchmark::State &state) {
@@ -78,6 +78,38 @@ static void BM_pack_gemm_operand_a(benchmark::State &state) {
   for (auto _ : state) {
     _mlir_ciface_pack_gemm_operand_a(&in, &out);
   }
+
+  int64_t numberOfElem = 512 * 1024;
+  state.SetBytesProcessed(int64_t(state.iterations()) * sizeof(float) *
+                          numberOfElem);
+}
+
+static void BM_unpack_gemm_operand(benchmark::State &state) {
+  intptr_t sizesIn[4] = {16, 16, 32, 32};
+  MemRef<float, 4> in(sizesIn);
+
+  intptr_t sizesOut[2] = {512, 512};
+  MemRef<float, 2> out(sizesOut);
+
+  random_device rd;
+  mt19937 gen(rd());
+  uniform_real_distribution<> dis(0.0, 1.0);
+
+  for (int i = in.getSize(); i >= 0; i--) {
+    in[i] = dis(gen);
+  }
+
+  for (int i = out.getSize(); i >= 0; i--) {
+    out[i] = 0.0;
+  }
+
+  for (auto _ : state) {
+    _mlir_ciface_unpack_gemm_operand(&in, &out);
+  }
+
+  int64_t numberOfElem = 512 * 512;
+  state.SetBytesProcessed(int64_t(state.iterations()) * sizeof(float) *
+                          numberOfElem);
 }
 
 static void BM_pack_gemm_operand_b(benchmark::State &state) {
@@ -123,153 +155,6 @@ static void BM_mlp_single_layer(benchmark::State &state) {
 
   for (auto _ : state) {
     _mlir_ciface_mlp_single_layer(&in, &out);
-  }
-}
-
-static void BM_small_gemm(benchmark::State &state) {
-  intptr_t sizesInput[2] = {state.range(0), state.range(1)};
-  MemRef<float, 2> inputA(sizesInput);
-  MemRef<float, 2> inputB(sizesInput);
-
-  intptr_t sizesOutput[2] = {state.range(0), state.range(1)};
-  MemRef<float, 2> outputC(sizesOutput);
-
-  random_device rd;
-  mt19937 gen(rd());
-  uniform_real_distribution<> dis(0.0, 1.0);
-
-  for (int i = inputA.getSize(); i >= 0; i--) {
-    inputA[i] = dis(gen);
-  }
-
-  for (int i = inputB.getSize(); i >= 0; i--) {
-    inputB[i] = dis(gen);
-  }
-
-  for (int i = outputC.getSize(); i >= 0; i--) {
-    outputC[i] = dis(gen);
-  }
-
-  for (auto _ : state) {
-    _mlir_ciface_small_gemm(&inputA, &inputB, &outputC);
-  }
-}
-
-static void BM_mid_gemm(benchmark::State &state) {
-  intptr_t sizesInput[2] = {64, 64};
-  MemRef<float, 2> inputA(sizesInput);
-  MemRef<float, 2> inputB(sizesInput);
-
-  intptr_t sizesOutput[2] = {64, 64};
-  MemRef<float, 2> outputC(sizesOutput);
-
-  random_device rd;
-  mt19937 gen(rd());
-  uniform_real_distribution<> dis(0.0, 1.0);
-
-  for (int i = inputA.getSize(); i >= 0; i--) {
-    inputA[i] = dis(gen);
-  }
-
-  for (int i = inputB.getSize(); i >= 0; i--) {
-    inputB[i] = dis(gen);
-  }
-
-  for (int i = outputC.getSize(); i >= 0; i--) {
-    outputC[i] = dis(gen);
-  }
-
-  for (auto _ : state) {
-    _mlir_ciface_mid_gemm(&inputA, &inputB, &outputC);
-  }
-}
-
-static void BM_large_gemm(benchmark::State &state) {
-  intptr_t sizesInputA[2] = {512, 1024};
-  MemRef<float, 2> inputA(sizesInputA);
-  intptr_t sizesInputB[2] = {1024, 512};
-  MemRef<float, 2> inputB(sizesInputB);
-
-  intptr_t sizesOutput[2] = {512, 512};
-  MemRef<float, 2> outputC(sizesOutput);
-
-  random_device rd;
-  mt19937 gen(rd());
-  uniform_real_distribution<> dis(0.0, 1.0);
-
-  for (int i = inputA.getSize(); i >= 0; i--) {
-    inputA[i] = dis(gen);
-  }
-
-  for (int i = inputB.getSize(); i >= 0; i--) {
-    inputB[i] = dis(gen);
-  }
-
-  for (int i = outputC.getSize(); i >= 0; i--) {
-    outputC[i] = dis(gen);
-  }
-
-  for (auto _ : state) {
-    _mlir_ciface_large_gemm(&inputA, &inputB, &outputC);
-  }
-}
-
-static void BM_large_gemm_with_fill(benchmark::State &state) {
-  intptr_t sizesInputA[2] = {512, 1024};
-  MemRef<float, 2> inputA(sizesInputA);
-  intptr_t sizesInputB[2] = {1024, 512};
-  MemRef<float, 2> inputB(sizesInputB);
-
-  intptr_t sizesOutput[2] = {512, 512};
-  MemRef<float, 2> outputC(sizesOutput);
-
-  random_device rd;
-  mt19937 gen(rd());
-  uniform_real_distribution<> dis(0.0, 1.0);
-
-  for (int i = inputA.getSize(); i >= 0; i--) {
-    inputA[i] = dis(gen);
-  }
-
-  for (int i = inputB.getSize(); i >= 0; i--) {
-    inputB[i] = dis(gen);
-  }
-
-  for (int i = outputC.getSize(); i >= 0; i--) {
-    outputC[i] = 0;
-  }
-
-  for (auto _ : state) {
-    _mlir_ciface_large_gemm_with_fill(&inputA, &inputB, &outputC);
-  }
-}
-
-static void BM_large_gemm_pre_packed(benchmark::State &state) {
-  intptr_t sizesInput[4] = {16, 32, 32, 32};
-  MemRef<float, 4> inputA(sizesInput);
-  MemRef<float, 4> inputB(sizesInput);
-
-  intptr_t sizesOutput[4] = {16, 16, 32, 32};
-  MemRef<float, 4> outputC(sizesOutput);
-
-  random_device rd;
-  mt19937 gen(rd());
-  uniform_real_distribution<> dis(0.0, 1.0);
-
-  for (int i = inputA.getSize(); i >= 0; i--) {
-    inputA[i] = dis(gen);
-  }
-
-  for (int i = inputB.getSize(); i >= 0; i--) {
-    inputB[i] = dis(gen);
-  }
-
-  for (int i = outputC.getSize(); i >= 0; i--) {
-    outputC[i] = dis(gen);
-  }
-
-  for (auto _ : state) {
-    _mlir_ciface_large_gemm_pre_packed(&inputA, &inputB, &outputC);
   }
 }
 
@@ -496,64 +381,155 @@ static void BM_mha_tensorflow_seq_len_256(benchmark::State &state) {
   }
 }
 
-static void DoSetup(const benchmark::State &state) {
-  static const char structuredOpOdsHeaderFormat[] = R"FMT(
+static void BM_gemm_32x32x32(benchmark::State &state) {
+  intptr_t sizes[2] = {32, 32};
+  MemRef<float, 2> A(sizes);
+  MemRef<float, 2> B(sizes);
+  MemRef<float, 2> C(sizes);
 
-func.func @small_gemm(%arg0: tensor<{0}x{0}xf32>, %arg1: tensor<{0}x{0}xf32>, 
-                      %arg2: tensor<{0}x{0}xf32>) -> tensor<{0}x{0}xf32> attributes {{llvm.emit_c_interface}} {{
-  %0 = linalg.matmul ins(%arg0, %arg1: tensor<{0}x{0}xf32>, tensor<{0}x{0}xf32>)
-                     outs(%arg2: tensor<{0}x{0}xf32>) -> tensor<{0}x{0}xf32>
-  return %0 : tensor<{0}x{0}xf32>
-}}
+  random_device rd;
+  mt19937 gen(rd());
+  uniform_real_distribution<> dis(0.0, 1.0);
 
-  )FMT";
-
-  // Open the file.
-  std::string outputCppImplFilename = "mlir/small_gemm.mlir";
-  std::string errorMessage;
-  std::unique_ptr<llvm::ToolOutputFile> outputCppImpl;
-  if (!outputCppImplFilename.empty()) {
-    outputCppImpl = mlir::openOutputFile(outputCppImplFilename, &errorMessage);
-    if (!outputCppImpl) {
-      llvm::errs() << errorMessage << "\n";
-      return;
-    }
+  for (int i = A.getSize(); i >= 0; i--) {
+    A[i] = dis(gen);
+    B[i] = dis(gen);
+    C[i] = dis(gen);
   }
 
-  // Inject into the file.
-  outputCppImpl->os() << llvm::formatv(structuredOpOdsHeaderFormat,
-                                       state.range(0));
-  outputCppImpl->keep();
+  for (auto _ : state) {
+    _mlir_ciface_gemm_32x32x32(&A, &B, &C);
+  }
 }
 
-static void DoTeardown(const benchmark::State &state){};
+static void BM_gemm_32x32x64(benchmark::State &state) {
+  intptr_t sizesA[2] = {32, 64};
+  MemRef<float, 2> A(sizesA);
+  intptr_t sizesB[2] = {64, 32};
+  MemRef<float, 2> B(sizesB);
+  intptr_t sizesC[2] = {32, 32};
+  MemRef<float, 2> C(sizesC);
 
-#if 0
-BENCHMARK(BM_small_gemm);
-BENCHMARK(BM_large_gemm);
-BENCHMARK(BM_large_gemm_with_fill);
-BENCHMARK(BM_mlp_single_layer);
-BENCHMARK(BM_pack_gemm_operand_a);
-BENCHMARK(BM_pack_gemm_operand_b);
-BENCHMARK(BM_large_gemm_pre_packed);
-BENCHMARK(BM_mha_projection_v);
-BENCHMARK(BM_mha_projection_q);
-BENCHMARK(BM_mha_q_times_k);
-BENCHMARK(BM_mha_softmax_times_v);
-BENCHMARK(BM_mha_q_times_k);
-BENCHMARK(BM_mha_q_times_k_transposed);
-BENCHMARK(BM_mha_q_times_k_with_transpose);
-#endif
-BENCHMARK(BM_small_gemm)
-    ->Args({32, 32})
-    ->Args({64, 64})
-    ->Setup(DoSetup)
-    ->Teardown(DoTeardown);
-// BENCHMARK(BM_large_gemm);
-// BENCHMARK(BM_mid_gemm);
+  random_device rd;
+  mt19937 gen(rd());
+  uniform_real_distribution<> dis(0.0, 1.0);
+
+  for (int i = A.getSize(); i >= 0; i--) {
+    A[i] = dis(gen);
+  }
+
+  for (int i = B.getSize(); i >= 0; i--) {
+    B[i] = dis(gen);
+  }
+
+  for (int i = C.getSize(); i >= 0; i--) {
+    C[i] = dis(gen);
+  }
+
+  for (auto _ : state) {
+    _mlir_ciface_gemm_32x32x64(&A, &B, &C);
+  }
+}
+
+static void BM_gemm_64x64x64(benchmark::State &state) {
+  intptr_t sizes[2] = {64, 64};
+  MemRef<float, 2> A(sizes);
+  MemRef<float, 2> B(sizes);
+  MemRef<float, 2> C(sizes);
+
+  random_device rd;
+  mt19937 gen(rd());
+  uniform_real_distribution<> dis(0.0, 1.0);
+
+  for (int i = A.getSize(); i >= 0; i--) {
+    A[i] = dis(gen);
+    B[i] = dis(gen);
+    C[i] = dis(gen);
+  }
+
+  for (auto _ : state) {
+    _mlir_ciface_gemm_64x64x64(&A, &B, &C);
+  }
+}
+
+static void BM_gemm_128x128x128(benchmark::State &state) {
+  intptr_t sizes[2] = {128, 128};
+  MemRef<float, 2> A(sizes);
+  MemRef<float, 2> B(sizes);
+  MemRef<float, 2> C(sizes);
+
+  random_device rd;
+  mt19937 gen(rd());
+  uniform_real_distribution<> dis(0.0, 1.0);
+
+  for (int i = A.getSize(); i >= 0; i--) {
+    A[i] = dis(gen);
+    B[i] = dis(gen);
+    C[i] = dis(gen);
+  }
+
+  for (auto _ : state) {
+    _mlir_ciface_gemm_128x128x128(&A, &B, &C);
+  }
+}
+
+static void BM_gemm_1024x1024x1024(benchmark::State &state) {
+  intptr_t sizes[2] = {1024, 1024};
+  MemRef<float, 2> A(sizes);
+  MemRef<float, 2> B(sizes);
+  MemRef<float, 2> C(sizes);
+
+  random_device rd;
+  mt19937 gen(rd());
+  uniform_real_distribution<> dis(0.0, 1.0);
+
+  for (int i = A.getSize(); i >= 0; i--) {
+    A[i] = dis(gen);
+    B[i] = dis(gen);
+    C[i] = dis(gen);
+  }
+
+  for (auto _ : state) {
+    _mlir_ciface_gemm_1024x1024x1024(&A, &B, &C);
+  }
+}
+
+static void BM_memcpy(benchmark::State &state) {
+  float *src = new float[state.range(0)];
+  float *dst = new float[state.range(0)];
+  memset(src, 'x', state.range(0));
+  for (auto _ : state)
+    memcpy(dst, src, state.range(0));
+  benchmark::DoNotOptimize(src);
+  benchmark::DoNotOptimize(dst);
+  benchmark::ClobberMemory();
+  state.SetBytesProcessed(int64_t(state.iterations()) * sizeof(float) *
+                          int64_t(state.range(0)));
+  delete[] src;
+  delete[] dst;
+}
+BENCHMARK(BM_memcpy)->Arg(262144);
+
+// BENCHMARK(BM_gemm_32x32x32);
+//  BENCHMARK(BM_gemm_32x32x64);
+//  BENCHMARK(BM_gemm_64x64x64);
+//  BENCHMARK(BM_gemm_128x128x128);
+//  BENCHMARK(BM_gemm_1024x1024x1024);
+//   BENCHMARK(BM_large_gemm);
+//   BENCHMARK(BM_mid_gemm);
+//   BENCHMARK(BM_big_k_gemm);
+//   BENCHMARK(BM_big_m_gemm);
+//   BENCHMARK(BM_big_n_gemm);
+//   BENCHMARK(BM_mha_tensorflow);
+//  BENCHMARK(BM_mha_tensorflow_bytedance);
+// BENCHMARK(BM_mha_projection_v);
+// BENCHMARK(BM_mha_q_times_k);
+// BENCHMARK(BM_mha_softmax_times_v);
 // BENCHMARK(BM_mha_tensorflow);
-// BENCHMARK(BM_mha_tensorflow_bytedance);
-// BENCHMARK(BM_mha_tensorflow_seq_len_1024);
-// BENCHMARK(BM_mha_tensorflow_seq_len_256);
+//  BENCHMARK(BM_mha_tensorflow_seq_len_1024);
+//  BENCHMARK(BM_mha_tensorflow_seq_len_256);
+//  BENCHMARK(BM_mlp_single_layer);
+BENCHMARK(BM_pack_gemm_operand_a);
+BENCHMARK(BM_unpack_gemm_operand);
 
 BENCHMARK_MAIN();
