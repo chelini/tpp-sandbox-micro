@@ -8,6 +8,40 @@
 
 using namespace std;
 
+struct bf16 {
+  bf16(float f = 0);
+  uint16_t bits;
+};
+
+// Union used to make the int/float aliasing explicit so we can access the raw
+// bits.
+union Float32Bits {
+  uint32_t u;
+  float f;
+};
+
+const uint32_t kF32BfMantiBitDiff = 16;
+
+// Constructs the 16 bit representation for a bfloat value from a float value.
+// This implementation is adapted from Eigen.
+uint16_t float2bfloat(float floatValue) {
+  if (std::isnan(floatValue))
+    return std::signbit(floatValue) ? 0xFFC0 : 0x7FC0;
+
+  Float32Bits floatBits;
+  floatBits.f = floatValue;
+  uint16_t bfloatBits;
+
+  // Least significant bit of resulting bfloat.
+  uint32_t lsb = (floatBits.u >> kF32BfMantiBitDiff) & 1;
+  uint32_t roundingBias = 0x7fff + lsb;
+  floatBits.u += roundingBias;
+  bfloatBits = static_cast<uint16_t>(floatBits.u >> kF32BfMantiBitDiff);
+  return bfloatBits;
+}
+
+bf16::bf16(float f) : bits(float2bfloat(f)) {}
+
 extern "C" {
 void _mlir_ciface_mha_projection_v(MemRef<float, 3> *inputA,
                                    MemRef<float, 4> *output);
@@ -45,6 +79,8 @@ void _mlir_ciface_pack_gemm_operand_b(MemRef<float, 2> *In,
                                       MemRef<float, 4> *Out);
 void _mlir_ciface_gemm_32x32x32(MemRef<float, 2> *A, MemRef<float, 2> *B,
                                 MemRef<float, 2> *C);
+void _mlir_ciface_gemm_bf16_32x32x32(MemRef<bf16, 2> *A, MemRef<bf16, 2> *B,
+                                     MemRef<bf16, 2> *C);
 void _mlir_ciface_gemm_32x32x64(MemRef<float, 2> *A, MemRef<float, 2> *B,
                                 MemRef<float, 2> *C);
 void _mlir_ciface_gemm_64x64x64(MemRef<float, 2> *A, MemRef<float, 2> *B,
@@ -402,6 +438,27 @@ static void BM_gemm_32x32x32(benchmark::State &state) {
   }
 }
 
+static void BM_gemm_bf16_32x32x32(benchmark::State &state) {
+  intptr_t sizes[2] = {32, 32};
+  MemRef<bf16, 2> A(sizes);
+  MemRef<bf16, 2> B(sizes);
+  MemRef<bf16, 2> C(sizes);
+
+  random_device rd;
+  mt19937 gen(rd());
+  uniform_real_distribution<> dis(0.0, 1.0);
+
+  for (int i = A.getSize(); i >= 0; i--) {
+    A[i] = float2bfloat(dis(gen));
+    B[i] = float2bfloat(dis(gen));
+    C[i] = float2bfloat(dis(gen));
+  }
+
+  for (auto _ : state) {
+    _mlir_ciface_gemm_bf16_32x32x32(&A, &B, &C);
+  }
+}
+
 static void BM_gemm_32x32x64(benchmark::State &state) {
   intptr_t sizesA[2] = {32, 64};
   MemRef<float, 2> A(sizesA);
@@ -508,12 +565,14 @@ static void BM_memcpy(benchmark::State &state) {
   delete[] src;
   delete[] dst;
 }
-BENCHMARK(BM_memcpy)->Arg(262144);
 
-// BENCHMARK(BM_gemm_32x32x32);
+// BENCHMARK(BM_memcpy)->Arg(262144);
+
+BENCHMARK(BM_gemm_32x32x32);
+BENCHMARK(BM_gemm_bf16_32x32x32);
 //  BENCHMARK(BM_gemm_32x32x64);
 //  BENCHMARK(BM_gemm_64x64x64);
-//  BENCHMARK(BM_gemm_128x128x128);
+// BENCHMARK(BM_gemm_128x128x128);
 //  BENCHMARK(BM_gemm_1024x1024x1024);
 //   BENCHMARK(BM_large_gemm);
 //   BENCHMARK(BM_mid_gemm);
@@ -529,7 +588,7 @@ BENCHMARK(BM_memcpy)->Arg(262144);
 //  BENCHMARK(BM_mha_tensorflow_seq_len_1024);
 //  BENCHMARK(BM_mha_tensorflow_seq_len_256);
 //  BENCHMARK(BM_mlp_single_layer);
-BENCHMARK(BM_pack_gemm_operand_a);
-BENCHMARK(BM_unpack_gemm_operand);
+// BENCHMARK(BM_pack_gemm_operand_a);
+// BENCHMARK(BM_unpack_gemm_operand);
 
 BENCHMARK_MAIN();

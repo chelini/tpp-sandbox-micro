@@ -71,14 +71,15 @@ clang++ -std=c++11 -O3 \
 llc main.ll
 
 BENCHS=(
-        #"gemm_32x32x32"
+        "gemm_32x32x32"
+        "gemm_bf16_32x32x32"
         #"gemm_32x32x64"
         #"gemm_64x64x64"
         #"gemm_128x128x128"
         #"gemm_1024x1024x1024"
         #"mlp_single_layer"
-        "pack_gemm_operand_a"
-        "unpack_gemm_operand"
+        #"pack_gemm_operand_a"
+        #"unpack_gemm_operand"
         #"pack_gemm_operand_b"
         #"mha_projection_v"
         #"mha_projection_q"
@@ -92,30 +93,8 @@ BENCHS=(
         #"mha_tensorflow_seq_len_256"
        )
 
-# Do not use this.
-FLOPS=(
-        65536.000
-        131072.000
-        524288.000
-        4194304.000
-        2147483648.000
-        134479872.000
-        2097152.000
-        2097152.000
-        1073741824.000
-        1073741824.000
-        67108864.000
-        67108864.000
-        67108864.000
-        67108864.000
-        3355443200.000
-        3355443200.000
-        141733920768.000
-        9126805504.000
-      )
-
 TPP_FLAGS=(
-  "-tpp-mapping -bufferize -convert-memref-to-xsmm -default-pipeline"
+  "-tpp-mapping -convert-memref-to-xsmm -default-pipeline"
   ) 
  
 for BENCH in ${BENCHS[@]}; do
@@ -130,27 +109,5 @@ BENCHS_ASSEMBLY=("${BENCHS[@]/%/.s}")
 clang -std=c++11 -O3 main.s ${BENCHS_ASSEMBLY[@]} \
   -Lbenchmark/build/src -L../tpp-sandbox/build/lib -no-pie -lstdc++ -lbenchmark -ltpp_xsmm_runner_utils -lm -o main
 
-#taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=15 \
-#  --benchmark_min_time=1s --benchmark_report_aggregates_only=true --benchmark_format=json > dump.json
-
 taskset -c 1 ./main --benchmark_enable_random_interleaving=true --benchmark_repetitions=50 \
-  --benchmark_min_time=1s --benchmark_report_aggregates_only=true 
-
-#BENCHS_BENCH=("${BENCHS[@]/#/BM_}")
-#BENCHS_BENCH=("${BENCHS_BENCH[@]/%/_median}")
-
-#for i in ${!BENCHS_BENCH[@]}; do
-#  TIME=$( jq '.benchmarks[] | select(.name=='"\"${BENCHS_BENCH[$i]}\""') .cpu_time' dump.json )
-#  if [ -z "$TIME" ]
-#  then
-#    echo "no time for ${BENCHS_BENCH[$i]}, skipping it"
-#  else 
-#    echo ${FLOPS[$i]}
-#    echo ${TIME}
-#    awk "BEGIN {
-#        flops=${FLOPS[$i]}; time=${TIME}
-#        gflops=flops/time
-#        printf \"gflops for ${BENCHS_BENCH[$i]} : %.3f\n\", gflops
-#    }"
-#  fi  
-#done
+  --benchmark_min_time=1s --benchmark_report_aggregates_only=true
